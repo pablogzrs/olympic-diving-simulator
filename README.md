@@ -1,20 +1,18 @@
 # 🏊 International Diving Competition Simulator
 
-C++ simulation of an Olympic-style diving competition with probabilistic scoring system, difficulty ratings, and automated medal determination for 5 international athletes.
+C++ simulation of an Olympic-style diving competition with probabilistic scoring, difficulty-dependent performance, and automated medal determination for 5 athletes.
 
 ## 📋 Overview
 
-Realistic diving competition simulator featuring 5 rounds of competition, 7-judge scoring system, difficulty-based performance probabilities, and automatic podium calculation. Simulates real Olympic diving rules and scoring mechanics.
+Simulates 5 rounds of a diving competition. Each dive draws a difficulty rating, generates a score from a 7-judge panel, and produces a round score. After all rounds, totals are compared and gold, silver, and bronze are assigned.
 
 ## ✨ Features
 
-- **5-Round Competition** - Complete tournament simulation
-- **Probabilistic Scoring** - Difficulty affects success probability
-- **7-Judge Panel** - Official Olympic scoring format
-- **Difficulty Ranges** - 1.4 to 4.8 difficulty scale
-- **Automated Medal System** - Gold, silver, bronze determination
-- **Realistic Athletes** - 5 international competitors
-- **Detailed Score Tables** - Round-by-round breakdown
+- **5-Round Competition** — fixed tournament length
+- **Difficulty-Dependent Scoring** — harder dives shift the score distribution downward
+- **7-Judge Panel** — judge 1 is drawn independently; judges 2–7 deviate from judge 1
+- **Automated Medal System** — gold, silver, bronze by total score
+- **Round-by-Round Score Tables** — per-athlete breakdown
 
 ## 🏅 Competitors
 
@@ -28,57 +26,98 @@ Realistic diving competition simulator featuring 5 rounds of competition, 7-judg
 
 ## 🎲 Probability Model
 
-### Difficulty Distribution
+### Difficulty distribution
+
+`rangosDificultad()` maps a uniform draw from 1–100 onto seven difficulty bands:
+
 ```
-1.4-1.9: 5% chance (easiest)
-2.0-2.5: 10% chance
-2.5-3.0: 15% chance
-3.0-3.5: 30% chance (most common)
-3.5-4.0: 20% chance
-4.0-4.5: 15% chance
-4.5-4.8: 5% chance (hardest)
+ 5%  → 1.4 – 1.9   (easiest)
+10%  → 2.0 – 2.5
+15%  → 2.5 – 3.0
+30%  → 3.0 – 3.5   (most common)
+20%  → 3.5 – 4.0
+15%  → 4.0 – 4.5
+ 5%  → 4.5 – 4.7   (hardest)
 ```
 
-### Scoring Logic
-**Higher difficulty = Higher risk/reward:**
-- Easy dives (1.4-1.9): 80% chance of good score (8.0-10.0)
-- Medium dives (3.0-3.5): 60% chance of good score
-- Hard dives (4.5-4.8): 15% chance of perfect score, 35% chance of failure
+Difficulty is drawn as an integer and divided by 10, so values are always one decimal place. The bands share endpoints (2.5, 3.0, 3.5, 4.0, 4.5 each appear in two bands); `calificacionPrimerJuez()` tests them in order with inclusive comparisons, so a boundary value is always handled by the easier of the two.
+
+### Judge 1
+
+`calificacionPrimerJuez()` selects from a fixed table of 21 possible scores (0.0 to 10.0 in 0.5 increments). It draws a second uniform 1–100 value and routes it through a seven-way split whose thresholds depend on the difficulty band. As difficulty rises, probability mass shifts toward the lower end of the table. The routing is hardcoded per band rather than derived from a formula.
+
+### Judges 2–7
+
+`calificacionSiguientesJueces()` takes judge 1's score and applies a random deviation:
+
+```
+20%  →  ±0        7%  →  +1.5
+15%  →  +0.5      7%  →  -1.5
+15%  →  -0.5      5%  →  +2
+10%  →  +1        5%  →  -2
+10%  →  -1        3%  →  +2.5
+                  3%  →  -2.5
+```
+
+If the result falls outside 0.0–10.0, the judge returns judge 1's score unchanged. This means the panel is correlated by construction: all six remaining judges anchor to the same first score.
+
+## 📐 Round Scoring
+
+`puntuacionRonda()` computes the round score as:
+
+```
+round score = (sum of the 7 judge scores − highest judge score) × difficulty
+```
+
+Note this keeps six judges, not five — see Known Issues below.
+
+**Total score** = sum of the 5 round scores.
 
 ## 🛠️ Technologies
 
 - **Language:** C++ (C++11 or later)
-- **Concepts:** Arrays, functions, probability, randomization
-- **Design Pattern:** Matryoshka (nested function calls)
+- **Concepts:** arrays, function decomposition, probability, `rand()`/`srand()`
+- **Design approach:** "Matryoshka" — each function wraps the previous one
 
-## 🏗️ Architecture
+## 🏗️ Function Chain
 
-**"Matryoshka" Function Design:**
 ```
 generarNum1al100()
     ↓
-rangosDificultad()
+rangosDificultad()            → difficulty band
     ↓
-calificacionPrimerJuez()
+calificacionPrimerJuez()      → judge 1
     ↓
-generarCalificacionesCompletas()
+calificacionSiguientesJueces()→ one of judges 2–7
     ↓
-ejecutarRondaVariasVeces()
+ronda()                       → fills judges 2–7 into the array
     ↓
-main() → medallero()
+puntuacionRonda()             → round score
+    ↓
+ejecutarRonda()               → one athlete, one round
+    ↓
+ejecutarRondaVariasVeces()    → all 5 athletes, one round
+    ↓
+main() → formatoTable() → medallero()
 ```
 
-Each function builds upon the previous one, creating a nested structure.
+## 📝 Array Structure
+
+Each round for each athlete uses a 9-element `float` array:
+
+```
+[0]   Difficulty
+[1]   Judge 1 score
+[2-7] Judge 2–7 scores
+[8]   Round score
+```
+
+`ejecutarRonda()` fills `[1]`, then `[2..7]`, then `[8]`, and assigns `[0]` last.
 
 ## 🚀 Compilation & Execution
 
-**Compile:**
 ```bash
 g++ -o diving clavadosDefinitivo.cpp -std=c++11
-```
-
-**Run:**
-```bash
 ./diving
 ```
 
@@ -88,174 +127,47 @@ g++ -o diving.exe clavadosDefinitivo.cpp
 diving.exe
 ```
 
-## 📊 Output Format
-
-### Round Results
-```
- Clavado | Dificultad | Juez 1 | Juez 2 | Juez 3 | Juez 4 | Juez 5 | Juez 6 | Juez 7 | Total
---------------------------------------------------------------------------------------------------------
-    1         3.2        7.5      8.0      7.5      8.5      8.0      7.0      8.0      56.7
-    2         2.8        9.0      8.5      9.0      9.5      9.0      8.5      9.0      72.1
-    ...
-```
-
-### Final Medal Ceremony
-```
-¡La ganadora es Chen Yiwen, puntuando 347.8 puntos!
-China se lleva la medalla de oro
-
-¡El segundo lugar es para Sarah Bacon, puntuando 332.5 puntos!
-Estados Unidos se lleva la medalla de plata
-
-¡El tercer lugar es para Alejandra Orozco, puntuando 318.2 puntos!
-México se lleva la medalla de bronce
-```
-
 ## 🔬 Key Functions
 
-### Core Probability Functions
 ```cpp
-int generarNum1al100()
-// Generates random number 1-100 for probability checks
-
-float rangosDificultad(int input)
-// Maps probability to difficulty rating (1.4-4.8)
-
-float calificacionPrimerJuez(float dificultad)
-// Generates score based on difficulty (0.0-10.0)
+int   generarNum1al100()                                  // uniform draw, 1–100
+float rangosDificultad(int input)                         // probability → difficulty (1.4–4.7)
+float calificacionPrimerJuez(float dificultad)            // judge 1, conditioned on difficulty
+float calificacionSiguientesJueces(float primerJuez)      // one deviating judge
+void  ronda(float primeraCalificacion, float calif[])     // fills judges 2–7
+float puntuacionRonda(float calif[], float dificultad)    // round score
+void  ejecutarRonda(string clavadista, string pais, float calif[])
+void  ejecutarRondaVariasVeces(float c1[], ..., float c5[])
+void  formatoTable(float R1[], ..., float R5[], string nombre)
+int   medallero(float t1, float t2, float t3, float t4, float t5)
 ```
 
-### Scoring Functions
-```cpp
-void generarCalificacionesCompletas(float array[])
-// Generates all 7 judge scores + difficulty + total
+## 🏅 Medal Algorithm
 
-void ejecutarRondaVariasVeces(float AO[], float PE[], ...)
-// Runs complete round for all 5 athletes
-```
-
-### Display & Results
-```cpp
-void formatoTable(float R1[], float R2[], ...)
-// Prints formatted score table for athlete
-
-int medallero(float total1, float total2, ...)
-// Determines gold, silver, bronze winners
-```
-
-## 📐 Scoring Calculation
-
-**Official Olympic Diving Formula:**
-```
-1. Each judge scores 0.0 to 10.0 (increments of 0.5)
-2. Drop highest and lowest scores
-3. Sum remaining 5 scores
-4. Multiply by difficulty rating
-5. Result = Round score
-```
-
-**Total Score:**
-```
-Final Score = Sum of all 5 round scores
-```
-
-## 🎯 Difficulty-Performance Correlation
-
-| Difficulty | Perfect (9-10) | Good (7-9) | Medium (5-7) | Poor (0-5) |
-|-----------|---------------|------------|--------------|------------|
-| 1.4-1.9   | 20%          | 60%        | 15%          | 5%         |
-| 2.5-3.0   | 10%          | 45%        | 30%          | 15%        |
-| 3.5-4.0   | 5%           | 25%        | 45%          | 25%        |
-| 4.5-4.8   | 5%           | 10%        | 50%          | 35%        |
+1. Scan for the maximum total → gold, record its index
+2. Scan again excluding the gold index → silver
+3. Scan again excluding gold and silver → bronze
+4. Index maps into a 10-element array holding 5 names followed by 5 countries
 
 ## 🔧 Customization
 
-**Modify competitor list:**
+**Adjust difficulty probabilities** — in `rangosDificultad()`:
 ```cpp
-string participantes[10] = {
-    "Your Athlete 1", "Your Athlete 2", ...,
-    "Country 1", "Country 2", ...
-};
+if (input < 6 && input > 0)
+    { dificultadElegida = rand() % 6 + 14; }   // change band edges and ranges
 ```
 
-**Adjust difficulty probabilities:**
+**Change the judge deviation spread** — in `calificacionSiguientesJueces()`:
 ```cpp
-// In rangosDificultad() function
-if (input < 6 && input > 0)  // Change percentage ranges
-    {dificultadElegida = rand() % 6 + 14;}
+if (probabilidadAleatoria <= 20)
+    { calificacionSiguienteJuez = primerJuez; }
 ```
 
-**Change number of rounds:**
-```cpp
-// In main(), duplicate round code blocks
-float calificacionesR6AO[9] = {0.0, ...};
-// Add to formatoTable() and medallero() calculations
-```
-
-## 📝 Implementation Notes
-
-**Array Structure:**
-```
-calificacionesR1AO[9]:
-[0] = Difficulty
-[1] = Judge 1 score
-[2] = Judge 2 score
-...
-[7] = Judge 7 score
-[8] = Total round score
-```
-
-**Medal Algorithm:**
-1. Find maximum score → Gold (track index)
-2. Find maximum excluding gold index → Silver
-3. Find maximum excluding gold & silver → Bronze
-4. Index maps to athlete name and country
+**Change the number of rounds** — declare additional `calificacionesR6XX[9]` arrays in `main()` and extend `formatoTable()` and the total passed to `medallero()`.
 
 ## 🎓 Academic Context
 
-**Course:** Programming Fundamentals / Computational Thinking  
-**Concepts Demonstrated:**
-- Function decomposition
-- Array manipulation
-- Probability simulation
-- Conditional logic
-- Iterative algorithms
-
-## ⚠️ Known Limitations
-
-- Fixed number of competitors (5)
-- Fixed number of rounds (5)
-- Difficulty ranges hardcoded
-- No tie-breaking logic
-- Static athlete roster
-
-## 🔍 Technical Highlights
-
-- **Nested function architecture** (Matryoshka design)
-- **Probabilistic distributions** for realistic outcomes
-- **Array-based data management**
-- **Automated scoring calculations**
-- **Index-based winner determination**
-
-## 🏊 Example Run
-
-```
-Bienvenidas y bienvenidos al concurso internacional de clavados 2024
-Comenzará la primera ronda...
-[Scores generated for all 5 athletes]
-
-Comenzará la segunda ronda...
-[...]
-
-¡Hemos llegado al final del evento!
-[Full score table displayed]
-
-¡La ganadora es...!
-```
-
----
-
-**Author:** @pablo  
-**Created:** October 31, 2024  
-**Language:** C++11  
-**Type:** Probabilistic Simulation
+**Course:** Programming Fundamentals / Computational Thinking
+**Institution:** ITESM
+**Created:** October 31, 2024
+**Concepts:** function decomposition, array manipulation, probability simulation, conditional logic
